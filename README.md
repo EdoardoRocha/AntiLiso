@@ -13,4 +13,4 @@ Abra a URL local no navegador. No iPhone: Safari → Compartilhar → Adicionar 
 
 ## Variáveis
 
-`VITE_API_BASE_URL` aponta para a API (padrão: `https://anti-liso-api.vercel.app/api/v1`).
+`VITE_API_BASE_URL` aponta para a API (padrão: `https://antiliso-api.apichatzon.online/api/v1`).

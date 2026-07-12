@@ -17,6 +17,7 @@ export default function App() {
 
       <Route element={<ProtectedRoute />}>
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/chat/:conversationId" element={<ChatPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/chat" replace />} />
