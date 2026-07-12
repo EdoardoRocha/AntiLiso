@@ -1,5 +1,7 @@
 import { apiRequest } from './client'
 
+export const DEFAULT_CONVERSATION_TITLE = 'Nova Conversa'
+
 export type Conversation = {
   _id: string
   userId: string
@@ -30,6 +32,18 @@ type SendMessageResponse = {
   reply: string
 }
 
+export function isDefaultConversationTitle(title: string | undefined): boolean {
+  const trimmed = title?.trim() ?? ''
+  return !trimmed || trimmed === DEFAULT_CONVERSATION_TITLE
+}
+
+export function summarizeMessage(text: string, maxLen = 48): string {
+  const cleaned = text.trim().replace(/\s+/g, ' ')
+  if (!cleaned) return DEFAULT_CONVERSATION_TITLE
+  if (cleaned.length <= maxLen) return cleaned
+  return `${cleaned.slice(0, Math.max(1, maxLen - 1)).trimEnd()}…`
+}
+
 export function mapApiMessagesToChat(messages: ApiMessage[]): ChatMessage[] {
   return messages
     .filter((item) => typeof item.parts === 'string' && item.parts.trim())
@@ -41,13 +55,15 @@ export function mapApiMessagesToChat(messages: ApiMessage[]): ChatMessage[] {
     }))
 }
 
-export async function createConversation(): Promise<Conversation> {
+export async function createConversation(
+  title?: string,
+): Promise<Conversation> {
   const data = await apiRequest<CreateConversationResponse>(
     '/conversation/new',
     {
       method: 'POST',
       body: {
-        title: 'Nova Conversa',
+        title: title?.trim() || DEFAULT_CONVERSATION_TITLE,
         status: 'active',
         messages: [],
       },
@@ -55,6 +71,31 @@ export async function createConversation(): Promise<Conversation> {
     },
   )
   return data.conversation
+}
+
+export async function updateConversationTitle(
+  conversationId: string,
+  title: string,
+): Promise<Conversation | null> {
+  try {
+    const data = await apiRequest<Conversation | { conversation: Conversation }>(
+      `/conversation/${conversationId}`,
+      {
+        method: 'PATCH',
+        body: { title },
+        auth: true,
+      },
+    )
+    if (data && typeof data === 'object' && 'conversation' in data) {
+      return data.conversation
+    }
+    if (data && typeof data === 'object' && '_id' in data) {
+      return data
+    }
+    return null
+  } catch {
+    return null
+  }
 }
 
 export async function fetchConversations(): Promise<Conversation[]> {

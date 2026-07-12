@@ -5,14 +5,20 @@ import {
   createConversation,
   fetchConversationMessages,
   fetchConversations,
+  isDefaultConversationTitle,
   sendConversationMessage,
+  summarizeMessage,
+  updateConversationTitle,
   type ChatMessage,
   type Conversation,
 } from '../api/conversation'
 import { ChatInput } from '../components/ChatInput'
 import { ConversationSidebar } from '../components/ConversationSidebar'
+import { ErrorDialog } from '../components/ErrorDialog'
 import { MessageList } from '../components/MessageList'
+import { NewConversationDialog } from '../components/NewConversationDialog'
 import { useAuth } from '../context/AuthContext'
+import { formatErrorMessage } from '../utils/formatErrorMessage'
 
 function sortByUpdatedDesc(list: Conversation[]): Conversation[] {
   return [...list].sort(
@@ -32,8 +38,9 @@ export function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [creating, setCreating] = useState(false)
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [newConversationOpen, setNewConversationOpen] = useState(false)
 
   const handleUnauthorized = useCallback(() => {
     logout()
@@ -53,7 +60,7 @@ export function ChatPage() {
 
     async function loadConversations() {
       setLoadingConversations(true)
-      setError('')
+      setErrorMessage(null)
       try {
         await refreshConversations()
       } catch (err) {
@@ -62,10 +69,11 @@ export function ChatPage() {
           handleUnauthorized()
           return
         }
-        setError(
-          err instanceof ApiError
-            ? err.message
-            : 'Não foi possível carregar as conversas.',
+        setErrorMessage(
+          formatErrorMessage(
+            err,
+            'Não foi possível carregar as conversas.',
+          ),
         )
       } finally {
         if (!cancelled) setLoadingConversations(false)
@@ -96,7 +104,7 @@ export function ChatPage() {
 
     async function loadMessages() {
       setLoadingMessages(true)
-      setError('')
+      setErrorMessage(null)
       setMessages([])
       try {
         const history = await fetchConversationMessages(conversationId!)
@@ -107,10 +115,11 @@ export function ChatPage() {
           handleUnauthorized()
           return
         }
-        setError(
-          err instanceof ApiError
-            ? err.message
-            : 'Não foi possível carregar as mensagens.',
+        setErrorMessage(
+          formatErrorMessage(
+            err,
+            'Não foi possível carregar as mensagens.',
+          ),
         )
       } finally {
         if (!cancelled) setLoadingMessages(false)
@@ -123,14 +132,20 @@ export function ChatPage() {
     }
   }, [conversationId, handleUnauthorized])
 
-  async function handleNewConversation() {
+  function openNewConversationDialog() {
+    setErrorMessage(null)
+    setNewConversationOpen(true)
+  }
+
+  async function handleCreateConversation(title?: string) {
     setCreating(true)
-    setError('')
+    setErrorMessage(null)
     try {
-      const conversation = await createConversation()
+      const conversation = await createConversation(title)
       setConversations((prev) =>
         sortByUpdatedDesc([conversation, ...prev]),
       )
+      setNewConversationOpen(false)
       setSidebarOpen(false)
       navigate(`/chat/${conversation._id}`)
     } catch (err) {
@@ -138,10 +153,8 @@ export function ChatPage() {
         handleUnauthorized()
         return
       }
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Não foi possível criar a conversa.',
+      setErrorMessage(
+        formatErrorMessage(err, 'Não foi possível criar a conversa.'),
       )
     } finally {
       setCreating(false)
@@ -155,6 +168,30 @@ export function ChatPage() {
     }
   }
 
+  async function maybeUpdateTitleFromFirstMessage(
+    activeId: string,
+    text: string,
+    list: Conversation[],
+  ) {
+    const active = list.find((item) => item._id === activeId)
+    if (!active || !isDefaultConversationTitle(active.title)) return
+
+    const summary = summarizeMessage(text)
+    const updated = await updateConversationTitle(activeId, summary)
+    const nextTitle = updated?.title ?? summary
+    const nextUpdatedAt = updated?.updatedAt ?? new Date().toISOString()
+
+    setConversations((prev) =>
+      sortByUpdatedDesc(
+        prev.map((item) =>
+          item._id === activeId
+            ? { ...item, title: nextTitle, updatedAt: nextUpdatedAt }
+            : item,
+        ),
+      ),
+    )
+  }
+
   async function handleSend(text: string) {
     if (!conversationId) return
 
@@ -165,7 +202,7 @@ export function ChatPage() {
     }
     setMessages((prev) => [...prev, userMessage])
     setSending(true)
-    setError('')
+    setErrorMessage(null)
 
     try {
       const reply = await sendConversationMessage(conversationId, text)
@@ -177,16 +214,20 @@ export function ChatPage() {
           text: reply,
         },
       ])
-      void refreshConversations().catch(() => undefined)
+      let list = conversations
+      try {
+        list = await refreshConversations()
+      } catch {
+        // keep local list if refresh fails
+      }
+      await maybeUpdateTitleFromFirstMessage(conversationId, text, list)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         handleUnauthorized()
         return
       }
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Falha ao enviar. Tente de novo.',
+      setErrorMessage(
+        formatErrorMessage(err, 'Falha ao enviar. Tente de novo.'),
       )
       setMessages((prev) => prev.filter((m) => m.id !== userMessage.id))
     } finally {
@@ -233,7 +274,7 @@ export function ChatPage() {
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onSelect={handleSelectConversation}
-          onNew={() => void handleNewConversation()}
+          onNew={openNewConversationDialog}
         />
 
         <div className="chat-panel">
@@ -247,10 +288,10 @@ export function ChatPage() {
                 <button
                   type="button"
                   className="btn-primary empty-cta"
-                  onClick={() => void handleNewConversation()}
+                  onClick={openNewConversationDialog}
                   disabled={creating || loadingConversations}
                 >
-                  {creating ? 'Criando…' : 'Iniciar conversa'}
+                  Iniciar conversa
                 </button>
               </div>
             ) : loadingMessages ? (
@@ -262,13 +303,28 @@ export function ChatPage() {
             )}
           </main>
 
-          {error ? <p className="chat-error">{error}</p> : null}
-
           {hasActiveConversation ? (
             <ChatInput disabled={chatBusy} onSend={handleSend} />
           ) : null}
         </div>
       </div>
+
+      {errorMessage ? (
+        <ErrorDialog
+          message={errorMessage}
+          onClose={() => setErrorMessage(null)}
+        />
+      ) : null}
+
+      {newConversationOpen ? (
+        <NewConversationDialog
+          creating={creating}
+          onCancel={() => {
+            if (!creating) setNewConversationOpen(false)
+          }}
+          onConfirm={(title) => void handleCreateConversation(title)}
+        />
+      ) : null}
     </div>
   )
 }
