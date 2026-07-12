@@ -1,6 +1,10 @@
+const DEFAULT_API_BASE = 'https://antiliso-api.apichatzon.online/api/v1'
+
+const configuredBase = import.meta.env.VITE_API_BASE_URL
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ??
-  'https://antiliso-api.apichatzon.online/api/v1'
+  configuredBase && !configuredBase.includes('anti-liso-api.vercel.app')
+    ? configuredBase
+    : DEFAULT_API_BASE
 
 const TOKEN_KEY = 'antiliso_token'
 const USER_KEY = 'antiliso_user'
@@ -80,28 +84,11 @@ export async function apiRequest<T>(
     headers.Authorization = `Bearer ${token}`
   }
 
-  const requestUrl = `${API_BASE}${path}`
-  // #region agent log
-  fetch('http://127.0.0.1:7879/ingest/e3e929ba-faea-407b-83e0-ae6bb701e190',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'426b9e'},body:JSON.stringify({sessionId:'426b9e',location:'client.ts:apiRequest:beforeFetch',message:'API request starting',data:{apiBase:API_BASE,path,method,requestUrl,origin:typeof window!=='undefined'?window.location.origin:null},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
-
-  let response: Response
-  try {
-    response = await fetch(requestUrl, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    })
-  } catch (err) {
-    // #region agent log
-    fetch('http://127.0.0.1:7879/ingest/e3e929ba-faea-407b-83e0-ae6bb701e190',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'426b9e'},body:JSON.stringify({sessionId:'426b9e',location:'client.ts:apiRequest:fetchError',message:'Fetch failed (likely CORS or network)',data:{requestUrl,errorName:err instanceof Error?err.name:'unknown',errorMessage:err instanceof Error?err.message:String(err)},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    throw err
-  }
-
-  // #region agent log
-  fetch('http://127.0.0.1:7879/ingest/e3e929ba-faea-407b-83e0-ae6bb701e190',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'426b9e'},body:JSON.stringify({sessionId:'426b9e',location:'client.ts:apiRequest:afterFetch',message:'Fetch response received',data:{requestUrl,status:response.status,ok:response.ok,corsHeader:response.headers.get('access-control-allow-origin')},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
+  const response = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
 
   let data: unknown = null
   const text = await response.text()
